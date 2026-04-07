@@ -4,7 +4,7 @@ import { registerCommands } from './commands.js';
 const program = new Command();
 
 program
-  .name('shimo')
+  .name('rush-shimo-cli')
   .description('石墨文档 CLI — read Shimo documents from terminal and AI agents')
   .version('0.1.0');
 

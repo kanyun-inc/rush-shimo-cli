@@ -6,8 +6,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "shimo": "./dist/index.js",
-    "rush-shimo": "./dist/index.js"
+    "rush-shimo-cli": "./dist/index.js"
   },
   "exports": {
     ".": "./dist/index.js"

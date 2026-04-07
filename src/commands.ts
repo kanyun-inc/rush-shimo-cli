@@ -18,7 +18,7 @@ function getClient(): ShimoClient {
   if (!token) {
     console.error(
       'Error: No token configured.\n' +
-        'Run `shimo login --token <token>` or set SHIMO_TOKEN environment variable.',
+        'Run `rush-shimo-cli login --token <token>` or set SHIMO_TOKEN environment variable.',
     );
     process.exit(1);
   }

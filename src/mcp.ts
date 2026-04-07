@@ -1,7 +1,7 @@
 /**
  * Shimo MCP Server (stdio transport)
  *
- * Usage: shimo mcp
+ * Usage: rush-shimo-cli mcp
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -18,7 +18,7 @@ function getClient(): ShimoClient {
   const token = getToken();
   if (!token) {
     throw new Error(
-      'SHIMO_TOKEN not set. Run `shimo login --token <token>` or set the env var.',
+      'SHIMO_TOKEN not set. Run `rush-shimo-cli login --token <token>` or set the env var.',
     );
   }
   return new ShimoClient(getBaseUrl(), token, getApiKey());
