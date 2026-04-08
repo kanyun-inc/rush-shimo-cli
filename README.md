@@ -18,11 +18,11 @@ npx rush-shimo-cli login --token <your-token>
 
 # 浏览文件
 npx rush-shimo-cli recent
-npx rush-shimo-cli cat 3O8pG2x48mb8Ty8y
+npx rush-shimo-cli cat <file-id>
 
 # 读取表格
-npx rush-shimo-cli sheets kyY7v4WybdYXUYL9
-npx rush-shimo-cli table kyY7v4WybdYXUYL9
+npx rush-shimo-cli sheets <sheet-id>
+npx rush-shimo-cli table <sheet-id>
 ```
 
 ## 特性
@@ -85,26 +85,26 @@ export SHIMO_TOKEN=<your-token>
 ### 文档
 
 ```bash
-rush-shimo-cli cat 3O8pG2x48mb8Ty8y            # 读取文档文本
-rush-shimo-cli info 3O8pG2x48mb8Ty8y            # 文件元信息
-rush-shimo-cli history 3O8pG2x48mb8Ty8y         # 编辑历史
+rush-shimo-cli cat <file-id>            # 读取文档文本
+rush-shimo-cli info <file-id>            # 文件元信息
+rush-shimo-cli history <file-id>         # 编辑历史
 ```
 
 ### 表格
 
 ```bash
-rush-shimo-cli sheets kyY7v4WybdYXUYL9          # 列出所有 sheet 名称
-rush-shimo-cli table kyY7v4WybdYXUYL9            # 读取所有 sheet
-rush-shimo-cli table kyY7v4WybdYXUYL9 "Sheet 1" # 读取指定 sheet
-rush-shimo-cli table kyY7v4WybdYXUYL9 "Sheet 1" A1:C10  # 读取指定范围
+rush-shimo-cli sheets <sheet-id>          # 列出所有 sheet 名称
+rush-shimo-cli table <sheet-id>            # 读取所有 sheet
+rush-shimo-cli table <sheet-id> "Sheet 1" # 读取指定 sheet
+rush-shimo-cli table <sheet-id> "Sheet 1" A1:C10  # 读取指定范围
 ```
 
 ### URL 支持
 
 ```bash
 # 完整 URL 在任何命令中都可使用
-rush-shimo-cli sheets "https://shimo.zhenguanyu.com/sheets/kyY7v4WybdYXUYL9/YlDoR/"
-rush-shimo-cli cat "https://shimo.zhenguanyu.com/docs/3O8pG2x48mb8Ty8y"
+rush-shimo-cli sheets "https://shimo.zhenguanyu.com/sheets/<sheet-id>"
+rush-shimo-cli cat "https://shimo.zhenguanyu.com/docs/<file-id>"
 ```
 
 ### 管道
@@ -113,19 +113,19 @@ rush-shimo-cli cat "https://shimo.zhenguanyu.com/docs/3O8pG2x48mb8Ty8y"
 
 ```bash
 # 搜索文档内容
-rush-shimo-cli cat 3O8pG2x48mb8Ty8y | grep "关键词"
+rush-shimo-cli cat <file-id> | grep "关键词"
 
 # 导出表格为 CSV
-rush-shimo-cli table kyY7v4WybdYXUYL9 -f csv > data.csv
+rush-shimo-cli table <sheet-id> -f csv > data.csv
 
 # 用 jq 提取列
-rush-shimo-cli table kyY7v4WybdYXUYL9 -f json | jq '.[0].values[][0]'
+rush-shimo-cli table <sheet-id> -f json | jq '.[0].values[][0]'
 
 # 获取最近文件 ID
 rush-shimo-cli recent --json | jq '.[].guid'
 
 # 统计行数
-rush-shimo-cli table kyY7v4WybdYXUYL9 | wc -l
+rush-shimo-cli table <sheet-id> | wc -l
 ```
 
 ## MCP Server
