@@ -230,11 +230,20 @@ export function registerCommands(program: Command): void {
 
         if (opts.format === 'json') {
           process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);
+          if (results.length > 0 && results.every((s) => s.error)) {
+            process.exitCode = 1;
+          }
           return;
         }
 
         const sep = opts.format === 'csv' ? ',' : '\t';
+        let anySuccess = false;
         for (const s of results) {
+          if (s.error) {
+            console.error(`--- ${s.name} --- ${s.error}`);
+            continue;
+          }
+          anySuccess = true;
           if (results.length > 1) {
             console.error(`--- ${s.name} ---`);
           }
@@ -256,6 +265,7 @@ export function registerCommands(program: Command): void {
             process.stdout.write(`${line.join(sep)}\n`);
           }
         }
+        if (!anySuccess) process.exitCode = 1;
       },
     );
 
