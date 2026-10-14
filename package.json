@@ -1,6 +1,6 @@
 {
   "name": "rush-shimo-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "石墨文档 CLI + SDK + MCP — read Shimo documents from terminal and AI agents",
   "type": "module",
   "main": "./dist/index.js",
