@@ -5,7 +5,8 @@
  *
  * 关键特性：
  * - 分级超时：文件信息 10s，内容读取 30s，批量 60s
- * - 自动重试：网络错误/5xx 重试 2 次（1s, 3s 指数退避）
+ * - 自动重试：仅网络错误/5xx 重试 2 次（1s, 3s 指数退避）；任何接口超时都不重试（接口卡死时重试只会把等待乘三，超出调用方 45s 预算）
+ * - 截止时间：传入 deadline（绝对时间戳）时，重试与每次尝试的超时均受截止时间约束；超时计时覆盖 body 读取
  * - 自动获取 sheet 名称：从 content API 解析 "B:xxx"
  * - 鉴权分层：lizard-api 用 Bearer，api/sas 用裸 token
  */
@@ -61,6 +62,20 @@ export interface SheetInfo {
 export interface SheetData {
   name: string;
   values: unknown[][];
+  error?: string;
+}
+
+/** 请求超时（AbortError）时抛出，不重试 */
+export class ShimoTimeoutError extends Error {
+  readonly path: string;
+  readonly timeoutMs: number;
+
+  constructor(timeoutMs: number, path: string) {
+    super(`请求超时 (${timeoutMs}ms): ${path}`);
+    this.name = 'ShimoTimeoutError';
+    this.path = path;
+    this.timeoutMs = timeoutMs;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -72,18 +87,42 @@ const TIMEOUT_MEDIUM = 30_000;
 const TIMEOUT_LONG = 60_000;
 const MAX_RETRIES = 2;
 const RETRY_DELAYS = [1000, 3000];
+const SHEET_READ_CONCURRENCY = 5;
+/** catSheet 整体预算，须小于调用方 Rush agent 的 tools/call 超时 45s */
+const SHEET_READ_BUDGET = 40_000;
 
 // ---------------------------------------------------------------------------
 // Client
 // ---------------------------------------------------------------------------
 
 export class ShimoClient {
+  private readonly timeouts: {
+    short: number;
+    medium: number;
+    long: number;
+    sheetBudget: number;
+  };
+
   constructor(
     private baseUrl: string,
     private token: string,
     private apiKey: string,
+    opts?: {
+      timeouts?: {
+        short?: number;
+        medium?: number;
+        long?: number;
+        sheetBudget?: number;
+      };
+    },
   ) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
+    this.timeouts = {
+      short: opts?.timeouts?.short ?? TIMEOUT_SHORT,
+      medium: opts?.timeouts?.medium ?? TIMEOUT_MEDIUM,
+      long: opts?.timeouts?.long ?? TIMEOUT_LONG,
+      sheetBudget: opts?.timeouts?.sheetBudget ?? SHEET_READ_BUDGET,
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -94,11 +133,17 @@ export class ShimoClient {
     path: string,
     opts: {
       timeout?: number;
+      deadline?: number;
       auth?: 'bearer' | 'raw';
       init?: RequestInit;
     } = {},
   ): Promise<T> {
-    const { timeout = TIMEOUT_SHORT, auth = 'bearer', init } = opts;
+    const {
+      timeout = this.timeouts.short,
+      deadline,
+      auth = 'bearer',
+      init,
+    } = opts;
     const url = `${this.baseUrl}${path}`;
     const authorization =
       auth === 'bearer' ? `Bearer ${this.token}` : this.token;
@@ -106,41 +151,54 @@ export class ShimoClient {
     let lastError: Error | undefined;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       if (attempt > 0) {
-        await sleep(RETRY_DELAYS[attempt - 1]);
+        const backoff = RETRY_DELAYS[attempt - 1];
+        if (deadline !== undefined && deadline - Date.now() <= backoff) {
+          break;
+        }
+        await sleep(backoff);
+      }
+      const attemptTimeout =
+        deadline === undefined
+          ? timeout
+          : Math.min(timeout, deadline - Date.now());
+      if (attemptTimeout <= 0) {
+        break;
       }
       try {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeout);
-        const res = await fetch(url, {
-          ...init,
-          signal: controller.signal,
-          headers: {
-            Authorization: authorization,
-            'x-shimo-api-key': this.apiKey,
-            ...init?.headers,
-          },
-        });
-        clearTimeout(timer);
+        const timer = setTimeout(() => controller.abort(), attemptTimeout);
+        try {
+          const res = await fetch(url, {
+            ...init,
+            signal: controller.signal,
+            headers: {
+              Authorization: authorization,
+              'x-shimo-api-key': this.apiKey,
+              ...init?.headers,
+            },
+          });
 
-        if (res.status >= 500 && attempt < MAX_RETRIES) {
-          lastError = new Error(`${res.status} ${res.statusText}`);
-          continue;
+          if (res.status >= 500 && attempt < MAX_RETRIES) {
+            lastError = new Error(`${res.status} ${res.statusText}`);
+            continue;
+          }
+
+          if (!res.ok) {
+            const body = await res.text().catch(() => '');
+            throw new Error(
+              `HTTP ${res.status}: ${body || res.statusText}`.trim(),
+            );
+          }
+
+          const ct = res.headers.get('content-type') ?? '';
+          if (ct.includes('application/json')) return (await res.json()) as T;
+          return (await res.text()) as unknown as T;
+        } finally {
+          clearTimeout(timer);
         }
-
-        if (!res.ok) {
-          const body = await res.text().catch(() => '');
-          throw new Error(
-            `HTTP ${res.status}: ${body || res.statusText}`.trim(),
-          );
-        }
-
-        const ct = res.headers.get('content-type') ?? '';
-        if (ct.includes('application/json')) return (await res.json()) as T;
-        return (await res.text()) as unknown as T;
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') {
-          lastError = new Error(`请求超时 (${timeout}ms): ${path}`);
-          if (attempt < MAX_RETRIES) continue;
+          throw new ShimoTimeoutError(attemptTimeout, path);
         } else if (
           err instanceof TypeError &&
           String(err.message).includes('fetch')
@@ -152,7 +210,7 @@ export class ShimoClient {
         }
       }
     }
-    throw lastError ?? new Error(`请求失败: ${path}`);
+    throw lastError ?? new ShimoTimeoutError(0, path);
   }
 
   // -------------------------------------------------------------------------
@@ -160,7 +218,9 @@ export class ShimoClient {
   // -------------------------------------------------------------------------
 
   async me(): Promise<ShimoUser> {
-    return this.request('/lizard-api/users/me', { timeout: TIMEOUT_SHORT });
+    return this.request('/lizard-api/users/me', {
+      timeout: this.timeouts.short,
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -170,19 +230,19 @@ export class ShimoClient {
   async ls(folderId?: string): Promise<ShimoFile[]> {
     const params = folderId ? `?folder=${folderId}` : '';
     return this.request(`/lizard-api/files${params}`, {
-      timeout: TIMEOUT_MEDIUM,
+      timeout: this.timeouts.medium,
     });
   }
 
   async info(fileId: string): Promise<ShimoFile> {
     return this.request(`/lizard-api/files/${fileId}`, {
-      timeout: TIMEOUT_SHORT,
+      timeout: this.timeouts.short,
     });
   }
 
   async recent(): Promise<ShimoFile[]> {
     return this.request('/lizard-api/files/recent', {
-      timeout: TIMEOUT_MEDIUM,
+      timeout: this.timeouts.medium,
     });
   }
 
@@ -193,7 +253,7 @@ export class ShimoClient {
   async cat(fileId: string): Promise<string> {
     const data = await this.request<{ content: string }>(
       `/sdk/v2/collab-files/${fileId}/plain-text`,
-      { timeout: TIMEOUT_MEDIUM },
+      { timeout: this.timeouts.medium },
     );
     return data.content;
   }
@@ -203,10 +263,10 @@ export class ShimoClient {
   // -------------------------------------------------------------------------
 
   /** 从 content API 解析 sheet 名称列表 */
-  async sheets(fileId: string): Promise<SheetInfo[]> {
+  async sheets(fileId: string, deadline?: number): Promise<SheetInfo[]> {
     const raw = await this.request<string>(
       `/lizard-api/files/${fileId}/content`,
-      { timeout: TIMEOUT_MEDIUM },
+      { timeout: this.timeouts.medium, deadline },
     );
     const names = [...raw.matchAll(/"B:([^"]+)"/g)].map((m) => m[1]);
     const indices = [...raw.matchAll(/"C\*(\d+)"/g)].map((m) =>
@@ -219,10 +279,14 @@ export class ShimoClient {
   }
 
   /** 获取表格指定范围的值 */
-  async getSheetValues(fileId: string, range: string): Promise<unknown[][]> {
+  async getSheetValues(
+    fileId: string,
+    range: string,
+    deadline?: number,
+  ): Promise<unknown[][]> {
     const data = await this.request<{ values: unknown[][] }>(
       `/api/sas/files/${fileId}/sheets/values?range=${encodeURIComponent(range)}`,
-      { timeout: TIMEOUT_MEDIUM, auth: 'raw' },
+      { timeout: this.timeouts.medium, auth: 'raw', deadline },
     );
     return data.values;
   }
@@ -232,13 +296,17 @@ export class ShimoClient {
    * - 不传 sheetName：读取所有 sheet
    * - 传 sheetName：只读该 sheet
    * - 传 range：读指定范围（如 "A1:C10"）
+   * - 并发上限 5：避免同时对石墨接口造成突发压力
+   * - 整体预算 40s：deadline 传给 request，每次尝试的超时与重试均受剩余预算约束，预算用完或已有 sheet 超时则跳过未开始的 sheet
    */
   async catSheet(
     fileId: string,
     sheetName?: string,
     range?: string,
   ): Promise<SheetData[]> {
-    const sheetList = await this.sheets(fileId);
+    const deadline = Date.now() + this.timeouts.sheetBudget;
+    const remaining = () => deadline - Date.now();
+    const sheetList = await this.sheets(fileId, deadline);
     if (sheetList.length === 0) {
       throw new Error('该文件没有找到任何工作表');
     }
@@ -256,19 +324,68 @@ export class ShimoClient {
       throw new Error(`找不到工作表 "${sheetName}"。可用: ${available}`);
     }
 
-    const results: SheetData[] = [];
-    for (const sheet of targets) {
-      const r = range ? `${sheet.name}!${range}` : sheet.name;
-      try {
-        const values = await this.getSheetValues(fileId, r);
-        results.push({ name: sheet.name, values });
-      } catch (err) {
-        results.push({
-          name: sheet.name,
-          values: [[`读取失败: ${err instanceof Error ? err.message : err}`]],
-        });
-      }
-    }
+    const results = new Array<SheetData>(targets.length);
+    let cursor = 0;
+    let timedOut = false;
+
+    const workers = Array.from(
+      { length: Math.min(SHEET_READ_CONCURRENCY, targets.length) },
+      () =>
+        (async () => {
+          while (cursor < targets.length) {
+            const index = cursor++;
+            const sheet = targets[index];
+            if (timedOut) {
+              results[index] = {
+                name: sheet.name,
+                values: [],
+                error: '未读取：同一文件已有工作表取值超时，跳过以免长时间等待',
+              };
+              continue;
+            }
+            if (remaining() <= 0) {
+              results[index] = {
+                name: sheet.name,
+                values: [],
+                error: `未读取：本次读取已用完 ${Math.ceil(this.timeouts.sheetBudget / 1000)}s 时间预算`,
+              };
+              continue;
+            }
+            const r = range ? `${sheet.name}!${range}` : sheet.name;
+            try {
+              const values = await this.getSheetValues(fileId, r, deadline);
+              results[index] = { name: sheet.name, values };
+            } catch (err) {
+              if (
+                err instanceof ShimoTimeoutError &&
+                err.timeoutMs < this.timeouts.medium
+              ) {
+                // 超时被剩余预算截短：是本次读取的时间用完了，不能归因为服务端卡死
+                results[index] = {
+                  name: sheet.name,
+                  values: [],
+                  error: `未读完：本次读取的 ${Math.ceil(this.timeouts.sheetBudget / 1000)}s 时间预算已用完（该工作表只剩 ${Math.ceil(err.timeoutMs / 1000)}s）`,
+                };
+              } else if (err instanceof ShimoTimeoutError) {
+                timedOut = true;
+                results[index] = {
+                  name: sheet.name,
+                  values: [],
+                  error: `石墨表格取值接口 ${Math.ceil(err.timeoutMs / 1000)}s 内未响应（服务端问题，与 range 大小无关，缩小 range 重试不会改善）`,
+                };
+              } else {
+                results[index] = {
+                  name: sheet.name,
+                  values: [],
+                  error: `读取失败: ${err instanceof Error ? err.message : err}`,
+                };
+              }
+            }
+          }
+        })(),
+    );
+
+    await Promise.all(workers);
     return results;
   }
 
@@ -282,14 +399,14 @@ export class ShimoClient {
   ): Promise<{ histories: ShimoHistory[]; isLastPage: boolean }> {
     return this.request(
       `/sdk/v2/collab-files/${fileId}/doc-sidebar-info?pageSize=${pageSize}`,
-      { timeout: TIMEOUT_MEDIUM },
+      { timeout: this.timeouts.medium },
     );
   }
 
   async mentions(fileId: string): Promise<ShimoMention[]> {
     const data = await this.request<{ mentionAtList: ShimoMention[] }>(
       `/sdk/v2/collab-files/${fileId}/mention-at-list`,
-      { timeout: TIMEOUT_MEDIUM },
+      { timeout: this.timeouts.medium },
     );
     return data.mentionAtList;
   }
@@ -297,7 +414,7 @@ export class ShimoClient {
   async commentCount(fileId: string): Promise<number> {
     const data = await this.request<{ count: number }>(
       `/sdk/v2/collab-files/${fileId}/comment-count`,
-      { timeout: TIMEOUT_SHORT },
+      { timeout: this.timeouts.short },
     );
     return data.count;
   }

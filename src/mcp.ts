@@ -103,7 +103,7 @@ const TOOLS = [
   {
     name: 'shimo_read_sheet',
     description:
-      '读取石墨表格内容。不传 sheetName 时自动读取所有工作表；传 sheetName 可读指定工作表；传 range 可读指定范围（如 A1:C10）。',
+      '读取石墨表格内容。不传 sheetName 时自动读取所有工作表；传 sheetName 可读指定工作表；传 range 可读指定范围（如 A1:C10）。若返回接口未响应，说明石墨服务端问题，不要缩小 range 重试。',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -245,7 +245,22 @@ export async function startMcpServer(): Promise<void> {
             args.sheetName as string | undefined,
             args.range as string | undefined,
           );
+
+          if (results.length > 0 && results.every((s) => s.error)) {
+            const lines = results.map((s) => `${s.name}: ${s.error}`);
+            lines.push(
+              '建议：不要重复调用 shimo_read_sheet；可用 shimo_file_info 确认文件可访问，或请用户导出表格内容后提供。',
+            );
+            return {
+              content: [{ type: 'text' as const, text: lines.join('\n') }],
+              isError: true,
+            };
+          }
+
           const output = results.map((s) => {
+            if (s.error) {
+              return `--- ${s.name} ---\n${s.error}`;
+            }
             const header = results.length > 1 ? `--- ${s.name} ---\n` : '';
             return header + JSON.stringify(s.values, null, 2);
           });
