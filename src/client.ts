@@ -138,10 +138,7 @@ export class ShimoClient {
         if (ct.includes('application/json')) return (await res.json()) as T;
         return (await res.text()) as unknown as T;
       } catch (err) {
-        if (
-          err instanceof DOMException &&
-          err.name === 'AbortError'
-        ) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
           lastError = new Error(`请求超时 (${timeout}ms): ${path}`);
           if (attempt < MAX_RETRIES) continue;
         } else if (
@@ -222,10 +219,7 @@ export class ShimoClient {
   }
 
   /** 获取表格指定范围的值 */
-  async getSheetValues(
-    fileId: string,
-    range: string,
-  ): Promise<unknown[][]> {
+  async getSheetValues(fileId: string, range: string): Promise<unknown[][]> {
     const data = await this.request<{ values: unknown[][] }>(
       `/api/sas/files/${fileId}/sheets/values?range=${encodeURIComponent(range)}`,
       { timeout: TIMEOUT_MEDIUM, auth: 'raw' },
@@ -251,15 +245,15 @@ export class ShimoClient {
 
     const targets = sheetName
       ? sheetList.filter(
-          (s) => s.name === sheetName || s.name.toLowerCase() === sheetName.toLowerCase(),
+          (s) =>
+            s.name === sheetName ||
+            s.name.toLowerCase() === sheetName.toLowerCase(),
         )
       : sheetList;
 
     if (targets.length === 0) {
       const available = sheetList.map((s) => s.name).join(', ');
-      throw new Error(
-        `找不到工作表 "${sheetName}"。可用: ${available}`,
-      );
+      throw new Error(`找不到工作表 "${sheetName}"。可用: ${available}`);
     }
 
     const results: SheetData[] = [];

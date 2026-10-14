@@ -31,11 +31,13 @@ function readConfig(): Config {
 
 function writeConfig(config: Config): void {
   mkdirSync(CONFIG_DIR, { recursive: true });
-  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2) + '\n');
+  writeFileSync(CONFIG_FILE, `${JSON.stringify(config, null, 2)}\n`);
 }
 
 export function getBaseUrl(): string {
-  return process.env.SHIMO_BASE_URL ?? readConfig().base_url ?? DEFAULT_BASE_URL;
+  return (
+    process.env.SHIMO_BASE_URL ?? readConfig().base_url ?? DEFAULT_BASE_URL
+  );
 }
 
 export function getToken(): string | undefined {

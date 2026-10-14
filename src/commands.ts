@@ -6,7 +6,13 @@
 
 import type { Command } from 'commander';
 import { ShimoClient } from './client.js';
-import { getApiKey, getBaseUrl, getConfigPath, getToken, saveConfig } from './config.js';
+import {
+  getApiKey,
+  getBaseUrl,
+  getConfigPath,
+  getToken,
+  saveConfig,
+} from './config.js';
 import { extractFileId, extractFolderId } from './url.js';
 
 // ---------------------------------------------------------------------------
@@ -94,7 +100,7 @@ export function registerCommands(program: Command): void {
       const client = getClient();
       const user = await client.me();
       if (opts.json) {
-        process.stdout.write(JSON.stringify(user, null, 2) + '\n');
+        process.stdout.write(`${JSON.stringify(user, null, 2)}\n`);
       } else {
         console.log(`${user.name} (${user.email})`);
         if (user.team) console.log(`Team: ${user.team.name}`);
@@ -112,7 +118,7 @@ export function registerCommands(program: Command): void {
       const folderId = folder ? resolveFolderIdOrExit(folder) : undefined;
       const files = await client.ls(folderId);
       if (opts.json) {
-        process.stdout.write(JSON.stringify(files, null, 2) + '\n');
+        process.stdout.write(`${JSON.stringify(files, null, 2)}\n`);
         return;
       }
       if (files.length === 0) {
@@ -120,7 +126,8 @@ export function registerCommands(program: Command): void {
         return;
       }
       for (const f of files) {
-        const icon = f.type === 'folder' ? '📁' : f.type === 'mosheet' ? '📊' : '📄';
+        const icon =
+          f.type === 'folder' ? '📁' : f.type === 'mosheet' ? '📊' : '📄';
         console.log(`${icon} ${f.name}\t${f.guid}\t${f.type}`);
       }
     });
@@ -134,7 +141,7 @@ export function registerCommands(program: Command): void {
       const client = getClient();
       const files = await client.recent();
       if (opts.json) {
-        process.stdout.write(JSON.stringify(files, null, 2) + '\n');
+        process.stdout.write(`${JSON.stringify(files, null, 2)}\n`);
         return;
       }
       for (const f of files) {
@@ -154,7 +161,7 @@ export function registerCommands(program: Command): void {
       const fileId = resolveId(file);
       const info = await client.info(fileId);
       if (opts.json) {
-        process.stdout.write(JSON.stringify(info, null, 2) + '\n');
+        process.stdout.write(`${JSON.stringify(info, null, 2)}\n`);
         return;
       }
       console.log(`Name:    ${info.name}`);
@@ -190,7 +197,7 @@ export function registerCommands(program: Command): void {
       const fileId = resolveId(file);
       const sheetList = await client.sheets(fileId);
       if (opts.json) {
-        process.stdout.write(JSON.stringify(sheetList, null, 2) + '\n');
+        process.stdout.write(`${JSON.stringify(sheetList, null, 2)}\n`);
         return;
       }
       if (sheetList.length === 0) {
@@ -210,37 +217,47 @@ export function registerCommands(program: Command): void {
     .argument('[sheet]', 'Sheet name (default: all sheets)')
     .argument('[range]', 'Cell range like A1:C10 (default: all)')
     .option('-f, --format <fmt>', 'Output format: tsv, csv, json', 'tsv')
-    .action(async (file: string, sheet: string | undefined, range: string | undefined, opts) => {
-      const client = getClient();
-      const fileId = resolveId(file);
-      const results = await client.catSheet(fileId, sheet, range);
+    .action(
+      async (
+        file: string,
+        sheet: string | undefined,
+        range: string | undefined,
+        opts,
+      ) => {
+        const client = getClient();
+        const fileId = resolveId(file);
+        const results = await client.catSheet(fileId, sheet, range);
 
-      if (opts.format === 'json') {
-        process.stdout.write(JSON.stringify(results, null, 2) + '\n');
-        return;
-      }
+        if (opts.format === 'json') {
+          process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);
+          return;
+        }
 
-      const sep = opts.format === 'csv' ? ',' : '\t';
-      for (const s of results) {
-        if (results.length > 1) {
-          console.error(`--- ${s.name} ---`);
+        const sep = opts.format === 'csv' ? ',' : '\t';
+        for (const s of results) {
+          if (results.length > 1) {
+            console.error(`--- ${s.name} ---`);
+          }
+          for (const row of s.values) {
+            const line = row.map((cell) => {
+              if (cell === null || cell === undefined) return '';
+              const str = String(cell);
+              if (
+                opts.format === 'csv' &&
+                (str.includes(',') || str.includes('"') || str.includes('\n'))
+              ) {
+                return `"${str.replace(/"/g, '""')}"`;
+              }
+              if (opts.format === 'tsv' && str.includes('\t')) {
+                return str.replace(/\t/g, ' ');
+              }
+              return str;
+            });
+            process.stdout.write(`${line.join(sep)}\n`);
+          }
         }
-        for (const row of s.values) {
-          const line = row.map((cell) => {
-            if (cell === null || cell === undefined) return '';
-            const str = String(cell);
-            if (opts.format === 'csv' && (str.includes(',') || str.includes('"') || str.includes('\n'))) {
-              return `"${str.replace(/"/g, '""')}"`;
-            }
-            if (opts.format === 'tsv' && str.includes('\t')) {
-              return str.replace(/\t/g, ' ');
-            }
-            return str;
-          });
-          process.stdout.write(line.join(sep) + '\n');
-        }
-      }
-    });
+      },
+    );
 
   // --- history ---
   program
@@ -254,7 +271,7 @@ export function registerCommands(program: Command): void {
       const fileId = resolveId(file);
       const { histories } = await client.history(fileId, Number(opts.limit));
       if (opts.json) {
-        process.stdout.write(JSON.stringify(histories, null, 2) + '\n');
+        process.stdout.write(`${JSON.stringify(histories, null, 2)}\n`);
         return;
       }
       if (histories.length === 0) {
@@ -290,7 +307,7 @@ export function registerCommands(program: Command): void {
       const fileId = resolveId(file);
       const list = await client.mentions(fileId);
       if (opts.json) {
-        process.stdout.write(JSON.stringify(list, null, 2) + '\n');
+        process.stdout.write(`${JSON.stringify(list, null, 2)}\n`);
         return;
       }
       if (list.length === 0) {
