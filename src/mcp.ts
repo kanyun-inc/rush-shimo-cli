@@ -52,7 +52,10 @@ const TOOLS = [
     inputSchema: {
       type: 'object' as const,
       properties: {
-        folderId: { type: 'string', description: '目录 ID（不传则列出桌面文件）' },
+        folderId: {
+          type: 'string',
+          description: '目录 ID（不传则列出桌面文件）',
+        },
         folderUrl: { type: 'string', description: '目录 URL' },
       },
     },
@@ -75,7 +78,8 @@ const TOOLS = [
   },
   {
     name: 'shimo_read_doc',
-    description: '读取石墨文档的纯文本内容。适用于轻文档(newdoc/docs)和传统文档(docx)。不适用于表格，表格请用 shimo_read_sheet。',
+    description:
+      '读取石墨文档的纯文本内容。适用于轻文档(newdoc/docs)和传统文档(docx)。不适用于表格，表格请用 shimo_read_sheet。',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -86,7 +90,8 @@ const TOOLS = [
   },
   {
     name: 'shimo_list_sheets',
-    description: '列出石墨表格中所有工作表(sheet)的名称。在读取表格内容前先调用此工具获取 sheet 名称列表。',
+    description:
+      '列出石墨表格中所有工作表(sheet)的名称。在读取表格内容前先调用此工具获取 sheet 名称列表。',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -106,7 +111,8 @@ const TOOLS = [
         fileId: { type: 'string', description: '石墨表格 ID' },
         sheetName: {
           type: 'string',
-          description: '工作表名称（不传则读取所有工作表）。可先用 shimo_list_sheets 获取名称列表。',
+          description:
+            '工作表名称（不传则读取所有工作表）。可先用 shimo_list_sheets 获取名称列表。',
         },
         range: {
           type: 'string',
@@ -176,11 +182,16 @@ export async function startMcpServer(): Promise<void> {
         }
 
         case 'shimo_list_files': {
-          const folderId = (args.folderId as string) || (args.folderUrl ? resolveFileId(args.folderUrl as string) : undefined);
+          const folderId =
+            (args.folderId as string) ||
+            (args.folderUrl
+              ? resolveFileId(args.folderUrl as string)
+              : undefined);
           const files = await client.ls(folderId);
           if (files.length === 0) return ok('（空目录）');
           const lines = files.map((f) => {
-            const icon = f.type === 'folder' ? '📁' : f.type === 'mosheet' ? '📊' : '📄';
+            const icon =
+              f.type === 'folder' ? '📁' : f.type === 'mosheet' ? '📊' : '📄';
             return `${icon} ${f.name} (${f.type}) id=${f.guid}`;
           });
           return ok(lines.join('\n'));
@@ -196,19 +207,28 @@ export async function startMcpServer(): Promise<void> {
         }
 
         case 'shimo_file_info': {
-          const id = resolveFileId(args.fileUrl as string, args.fileId as string);
+          const id = resolveFileId(
+            args.fileUrl as string,
+            args.fileId as string,
+          );
           const info = await client.info(id);
           return ok(JSON.stringify(info, null, 2));
         }
 
         case 'shimo_read_doc': {
-          const id = resolveFileId(args.fileUrl as string, args.fileId as string);
+          const id = resolveFileId(
+            args.fileUrl as string,
+            args.fileId as string,
+          );
           const content = await client.cat(id);
           return ok(content);
         }
 
         case 'shimo_list_sheets': {
-          const id = resolveFileId(args.fileUrl as string, args.fileId as string);
+          const id = resolveFileId(
+            args.fileUrl as string,
+            args.fileId as string,
+          );
           const sheetList = await client.sheets(id);
           if (sheetList.length === 0) return ok('没有找到工作表');
           const lines = sheetList.map((s) => `${s.index}: ${s.name}`);
@@ -216,7 +236,10 @@ export async function startMcpServer(): Promise<void> {
         }
 
         case 'shimo_read_sheet': {
-          const id = resolveFileId(args.fileUrl as string, args.fileId as string);
+          const id = resolveFileId(
+            args.fileUrl as string,
+            args.fileId as string,
+          );
           const results = await client.catSheet(
             id,
             args.sheetName as string | undefined,
@@ -230,7 +253,10 @@ export async function startMcpServer(): Promise<void> {
         }
 
         case 'shimo_edit_history': {
-          const id = resolveFileId(args.fileUrl as string, args.fileId as string);
+          const id = resolveFileId(
+            args.fileUrl as string,
+            args.fileId as string,
+          );
           const { histories } = await client.history(
             id,
             (args.limit as number) ?? 20,
@@ -244,7 +270,10 @@ export async function startMcpServer(): Promise<void> {
         }
 
         case 'shimo_mentions': {
-          const id = resolveFileId(args.fileUrl as string, args.fileId as string);
+          const id = resolveFileId(
+            args.fileUrl as string,
+            args.fileId as string,
+          );
           const list = await client.mentions(id);
           if (list.length === 0) return ok('没有 @提及');
           const lines = list.map((m) => `user:${m.userId} at:${m.atGuid}`);
@@ -252,7 +281,10 @@ export async function startMcpServer(): Promise<void> {
         }
 
         case 'shimo_comment_count': {
-          const id = resolveFileId(args.fileUrl as string, args.fileId as string);
+          const id = resolveFileId(
+            args.fileUrl as string,
+            args.fileId as string,
+          );
           const count = await client.commentCount(id);
           return ok(`评论数: ${count}`);
         }
